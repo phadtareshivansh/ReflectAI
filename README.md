@@ -28,7 +28,7 @@
 
 <br/>
 
-> **ReflectAI** is a full-stack, authenticated journaling companion powered by **Google Gemini** and **Cloud Firestore** — built as a submission for the **Google AI Studio Ideathon (APAC GenAI Academy)**. Every line of code was written under a security-first "constitution": threat-modeled, access-controlled, secret-free, and now fully **end-to-end encrypted** by construction.
+> **ReflectAI** is a full-stack, authenticated journaling companion powered by **Google Gemini** and **Cloud Firestore** — built as a submission for the **Google AI Studio Ideathon (APAC GenAI Academy)**. Every line of code was written under a security-first "constitution": threat-modeled, access-controlled, secret-free, and end-to-end encrypted by construction.
 
 <br/>
 
@@ -51,7 +51,7 @@
 - [🛠️ Tech Stack](#️-tech-stack)
 - [🚀 Getting Started](#-getting-started)
 - [☁️ Deploying to Cloud Run](#️-deploying-to-cloud-run)
-- [🗂️ Project Structure](#️-project-structure)
+- [🗺️ Future Implementation](#️-future-implementation)
 
 </td>
 </tr>
@@ -133,13 +133,13 @@ The starter lab gets you a working AI journal. ReflectAI goes further, treating 
 <td width="50%" valign="top">
 
 ### 🔐 Encrypted Insight Vault
-Every entry is encrypted **client-side with AES-GCM** (WebCrypto) before it ever touches Firestore. Even a full database breach exposes only ciphertext. Gemini decrypts content transiently, in memory, only for the duration of a request — never logged, never cached, never written to disk.
+`src/lib/crypto.ts` — every entry is encrypted **client-side with AES-GCM** (WebCrypto) before it ever touches Firestore. Even a full database breach exposes only ciphertext. Gemini decrypts content transiently, in memory, only for the duration of a request — never logged, never cached, never written to disk.
 
 </td>
 <td width="50%" valign="top">
 
 ### 🧠 Memory & Pattern Engine
-Weekly, Gemini-generated summaries surface recurring themes and mood shifts across your own entries. Keyword search works across your encrypted history, decrypting client-side. Every aggregation re-verifies per-entry ownership — a feature that "knows you" was built to never accidentally leak someone else's data.
+`WeeklyReflectionView.tsx` — Gemini-generated weekly summaries surface recurring themes and mood shifts across your own entries, capped at 10 entries per aggregation call to limit blast radius. Keyword search across your history lives in `HistorySidebar.tsx`, decrypting client-side.
 
 </td>
 </tr>
@@ -147,13 +147,13 @@ Weekly, Gemini-generated summaries surface recurring themes and mood shifts acro
 <td width="50%" valign="top">
 
 ### 🛡️ Pre-Send PII Guard
-A lightweight, non-blocking check flags likely emails or phone numbers in a draft before it's sent to Gemini, giving the user a clear "send anyway or edit first" choice rather than silently stripping or blocking content.
+`src/lib/piiDetector.ts` — a lightweight, non-blocking check flags likely emails or phone numbers in a draft before it's sent to Gemini, giving the user a clear "send anyway or edit first" choice.
 
 </td>
 <td width="50%" valign="top">
 
-### ⏱️ Session Freshness Checks
-Sensitive actions (like exporting your data) require a fresh, re-verified auth token rather than trusting an arbitrarily old session — shrinking the window a hijacked session could be misused in.
+### ⏱️ Session Freshness & Re-Auth
+`src/lib/sessionFreshness.ts` — exporting your data requires a fresh, re-verified auth token (via Firebase's `getIdTokenResult`) rather than trusting an arbitrarily old session, prompting a quick Google re-auth if the session has gone stale.
 
 </td>
 </tr>
@@ -161,27 +161,13 @@ Sensitive actions (like exporting your data) require a fresh, re-verified auth t
 <td width="50%" valign="top">
 
 ### 📤 Encrypted Data Export
-A "Download my data" option decrypts entries **client-side only** into a local file. Decrypted content never passes through the server during export — reusing the same vetted decrypt path as the rest of the app.
+Wired into `HistorySidebar.tsx` — a "Download my data" button decrypts entries **client-side only** into a local JSON file, gated behind the session-freshness check above. Decrypted content never passes through the server during export.
 
 </td>
-<td width="50%" valign="top">
-
-### 🚦 Per-User Rate Limiting
-The Gemini proxy endpoint is rate-limited per authenticated `uid`, generous enough to never interrupt normal use, but enough to blunt abuse or runaway cost from a compromised session.
-
-</td>
-</tr>
-<tr>
 <td width="50%" valign="top">
 
 ### 🧯 Global Error Boundary
-A single component failure can no longer take down the entire app. Errors are caught, logged safely (no journal content), and shown as a friendly recoverable screen instead of a blank crash.
-
-</td>
-<td width="50%" valign="top">
-
-### ✨ Loading & Empty States
-Every async interaction — auth checks, entry loads, Gemini responses, search — has a real loading and empty state, never a blank or broken-looking screen.
+`src/components/ErrorBoundary.tsx` — a single component failure can no longer take down the entire app. Errors are caught, logged safely client-side (no journal content), and shown as a friendly recoverable screen instead of a blank crash.
 
 </td>
 </tr>
@@ -216,7 +202,7 @@ flowchart LR
 | **Authentication** | Firebase Authentication (Google Sign-In) | Federated identity only — no passwords stored |
 | **Encryption** | WebCrypto AES-GCM (client-side) | Entries encrypted before write; decrypted only client-side or transiently server-side |
 | **Data Storage** | Cloud Firestore | Isolated path: `/users/{userId}/interactions/{interactionId}`, ciphertext at rest |
-| **AI Processing** | Express proxy + `@google/genai` | API key never reaches the client; model fallback ladder; per-user rate limiting |
+| **AI Processing** | Express proxy + `@google/genai` | API key never reaches the client; model fallback ladder; aggregation capped at 10 entries |
 | **Secret Management** | Google Cloud Secret Manager | Injected as env vars at Cloud Run runtime via IAM binding, never hardcoded |
 
 <br/>
@@ -247,19 +233,28 @@ firebase deploy --only firestore:rules
 <details>
 <summary><b>Click to expand — Client-Side Encryption (Encrypted Insight Vault)</b></summary>
 
-- All entry text (prompt + Gemini response pairs) is encrypted client-side with **AES-GCM, 256-bit**, via the browser's native `SubtleCrypto` — before any Firestore write.
-- The per-user encryption key is stored **separately** from the ciphertext, never in the same document, so a leaked entry document alone reveals nothing readable.
-- When Gemini needs to read past entries (for the Pattern Engine's trend summaries), decryption happens **transiently, server-side, in memory only** — the plaintext is never logged, cached, or persisted to disk.
-- Verified manually: inspecting a raw Firestore document shows genuine ciphertext (confirmed not to be base64-encoded plaintext), and Cloud Run logs contain no trace of decrypted journal content after normal use.
+- All entry text (prompt + Gemini response pairs) is encrypted client-side with **AES-GCM, 256-bit**, via the browser's native `SubtleCrypto` (`src/lib/crypto.ts`) — before any Firestore write.
+- The per-user encryption key is stored **separately** from the ciphertext, never in the same document.
+- When Gemini needs to read past entries (for the Pattern Engine's trend summaries), decryption happens **transiently, server-side, in memory only** — plaintext is never logged, cached, or persisted to disk.
+- Verified manually: inspecting a raw Firestore document shows genuine ciphertext, and Cloud Run logs contain no trace of decrypted journal content after normal use.
 
 </details>
 
 <details>
 <summary><b>Click to expand — Aggregation & Pattern Engine Safety</b></summary>
 
-- Any endpoint reading multiple entries for trend summaries or search re-verifies `request.auth.uid` ownership **per entry**, not just once at the top of the request.
-- Aggregation calls are capped at a fixed number of entries per request, limiting the blast radius if a session were ever compromised.
-- Generated trend summaries are treated as sensitive data and follow the same encryption-at-rest rule as individual entries.
+- Weekly trend aggregation is **capped at 10 entries from the last 7 days**, limiting blast radius if a session were ever compromised.
+- Per-entry ownership is re-verified during aggregation, not just once at the top of the request.
+- Generated trend summaries are treated as sensitive data, following the same encryption-at-rest posture as individual entries.
+
+</details>
+
+<details>
+<summary><b>Click to expand — Session Freshness & Data Export</b></summary>
+
+- Exporting journal data checks token freshness via Firebase's `getIdTokenResult` (`src/lib/sessionFreshness.ts`); if the session is older than 60 minutes, a Google re-auth popup is triggered before the export proceeds.
+- Regular chat/journal usage never triggers this — only the gated export action.
+- Export itself decrypts entries client-side into a local JSON download; decrypted content never passes through the server.
 
 </details>
 
@@ -303,7 +298,7 @@ gemini-3.6-flash → gemini-3.1-flash-lite → gemini-flash-latest → gemini-3.
 |:---:|:---:|:---:|:---:|
 | React 19 | Express 4 | `@google/genai` 2.4 | WebCrypto (AES-GCM) |
 | Tailwind CSS 4 | `server.ts` (tsx) | Firebase 12 (Auth + Firestore) | Cloud Secret Manager |
-| Framer Motion | esbuild (prod bundle) | Google AI Studio (scaffolded) | Per-user rate limiting |
+| Framer Motion | esbuild (prod bundle) | Google AI Studio (scaffolded) | Firebase `getIdTokenResult` freshness checks |
 | `react-markdown` + `lucide-react` | Cloud Run | Vite 6 | TypeScript 5.8 / ESLint |
 
 </div>
@@ -381,29 +376,12 @@ gcloud run services update reflect-ai-journal \
 
 <br/>
 
-## 🗂️ Project Structure
+## 🗺️ Future Implementation
 
-```
-ReflectAI/
-├── public/assets/aistudio/    # Static + AI Studio-generated assets
-├── src/                       # React application source
-│   ├── crypto/                 # WebCrypto AES-GCM encrypt/decrypt helpers
-│   └── components/              # UI: chat, history, error boundary, redaction guard
-├── server.ts                  # Express server — Gemini proxy, auth middleware,
-│                               # rate limiting, transient decrypt for aggregation
-├── firebase-applet-config.json
-├── firestore.rules            # Owner-scoped Firestore security rules
-├── index.html
-├── metadata.json
-├── vite.config.ts
-├── tsconfig.json
-└── .env.example                # GEMINI_API_KEY, APP_URL — no real secrets committed
-```
+These were considered and scoped but are **not yet implemented** — listed here rather than claimed as done:
 
-<br/>
-
-## 🗺️ Future Ideas
-
+- [ ] **Per-user API rate limiting** on the Gemini proxy endpoint, keyed by authenticated `uid`, to blunt abuse or runaway cost from a single session (currently only the Pattern Engine's 10-entry aggregation cap exists)
+- [ ] **Dedicated loading/empty-state components** for a more consistently polished async UX across every screen (some loading props exist, but coverage isn't fully audited)
 - [ ] Full semantic/embedding-based search across entries (current search is keyword-based)
 - [ ] Optional passphrase-derived key for an extra layer beyond session-scoped encryption
 - [ ] Configurable retention/auto-delete policy for old entries
