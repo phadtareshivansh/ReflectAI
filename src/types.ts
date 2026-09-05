@@ -58,3 +58,39 @@ export interface UserProfile {
   photoURL: string | null;
 }
 
+export interface WeeklyReflectionData {
+  id: string;
+  userId: string;
+  startDate: string;
+  endDate: string;
+  entryCount: number;
+  recurringThemes: string[];
+  toneShift: string;
+  synthesis: string;
+  actionableInsight: string;
+  moodDistribution: Record<string, number>;
+  modelUsed: string;
+  createdAt: string;
+  isEncrypted?: boolean;
+  summaryIv?: string;
+}
+
+export interface EncryptedWeeklySummaryDoc {
+  id: string;
+  userId: string;
+  startDate: string;
+  endDate: string;
+  entryCount: number;
+  summaryCiphertext: string;
+  summaryIv: string;
+  themesCiphertext: string;
+  themesIv: string;
+  insightsCiphertext: string;
+  insightsIv: string;
+  toneShift: string;
+  moodDistribution: Record<string, number>;
+  modelUsed: string;
+  createdAt: string;
+  isEncrypted: boolean;
+}
+

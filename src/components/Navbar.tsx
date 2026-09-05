@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { UserProfile } from "../types";
-import { LogOut, PlusCircle, BookOpen, Lock, X } from "lucide-react";
+import { LogOut, PlusCircle, BookOpen, Lock, X, Compass } from "lucide-react";
 
 interface NavbarProps {
   user: UserProfile;
@@ -8,6 +8,8 @@ interface NavbarProps {
   onNewReflection: () => void;
   onToggleHistory?: () => void;
   historyCount: number;
+  onOpenWeeklyReflection?: () => void;
+  isWeeklyActive?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -16,6 +18,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onNewReflection,
   onToggleHistory,
   historyCount,
+  onOpenWeeklyReflection,
+  isWeeklyActive,
 }) => {
   const [vaultModalOpen, setVaultModalOpen] = useState(false);
 
@@ -71,6 +75,22 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="border border-[#262626] bg-[#1A1A1A] px-1.5 py-0.2 text-[9px] font-mono text-[#C5A059] rounded-sm">
                 {historyCount}
               </span>
+            </button>
+          )}
+
+          {onOpenWeeklyReflection && (
+            <button
+              id="nav-weekly-reflection-btn"
+              onClick={onOpenWeeklyReflection}
+              className={`inline-flex items-center gap-1.5 border px-2.5 sm:px-3 py-2 text-[10px] uppercase tracking-[0.15em] font-medium transition-all rounded-sm cursor-pointer ${
+                isWeeklyActive
+                  ? "border-[#C5A059] bg-[#C5A059]/15 text-[#C5A059]"
+                  : "border-[#262626] bg-[#141414] text-[#888888] hover:text-[#CCC] hover:border-[#333]"
+              }`}
+              title="Memory & Pattern Engine: Weekly Analysis"
+            >
+              <Compass className="h-3.5 w-3.5 text-[#C5A059]" />
+              <span className="hidden md:inline">Weekly Patterns</span>
             </button>
           )}
 

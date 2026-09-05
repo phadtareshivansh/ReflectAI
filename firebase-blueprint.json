@@ -75,6 +75,58 @@
         }
       },
       "required": ["content", "geminiResponse", "userId", "createdAt"]
+    },
+    "weeklySummary": {
+      "title": "WeeklyReflectionSummary",
+      "description": "Weekly trend and pattern synthesis across 7 days of reflections, encrypted with AES-GCM",
+      "type": "object",
+      "properties": {
+        "summaryCiphertext": {
+          "type": "string",
+          "description": "AES-GCM encrypted synthesis text"
+        },
+        "summaryIv": {
+          "type": "string",
+          "description": "Base64 initialization vector for summaryCiphertext"
+        },
+        "themesCiphertext": {
+          "type": "string",
+          "description": "AES-GCM encrypted JSON array of recurring themes"
+        },
+        "themesIv": {
+          "type": "string",
+          "description": "Base64 initialization vector for themesCiphertext"
+        },
+        "startDate": {
+          "type": "string",
+          "description": "Start ISO date of the analyzed 7-day window"
+        },
+        "endDate": {
+          "type": "string",
+          "description": "End ISO date of the analyzed 7-day window"
+        },
+        "entryCount": {
+          "type": "number",
+          "description": "Number of user entries synthesized (capped at 10)"
+        },
+        "modelUsed": {
+          "type": "string",
+          "description": "Gemini model used for synthesis"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of creation"
+        },
+        "isEncrypted": {
+          "type": "boolean",
+          "description": "True when encrypted with client-side AES-GCM"
+        }
+      },
+      "required": ["summaryCiphertext", "summaryIv", "userId", "createdAt", "startDate", "endDate"]
     }
   },
   "firestore": {
@@ -85,6 +137,10 @@
     "/users/{userId}/keys/{keyId}": {
       "schema": "userKey",
       "description": "Private owner-isolated vault encryption keys separated from interaction documents"
+    },
+    "/users/{userId}/weekly_summaries/{summaryId}": {
+      "schema": "weeklySummary",
+      "description": "Private owner-isolated encrypted weekly pattern syntheses and mood trends"
     }
   }
 }

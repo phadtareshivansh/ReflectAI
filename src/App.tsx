@@ -6,6 +6,8 @@ import {
   ChatMessage,
   UserVaultKeyRecord,
   EncryptedInteractionDoc,
+  WeeklyReflectionData,
+  EncryptedWeeklySummaryDoc,
 } from "./types";
 import {
   auth,
@@ -39,7 +41,8 @@ import { LandingPage } from "./components/LandingPage";
 import { ReflectionComposer } from "./components/ReflectionComposer";
 import { ActiveInteractionView } from "./components/ActiveInteractionView";
 import { HistorySidebar } from "./components/HistorySidebar";
-import { AlertCircle, ShieldAlert, Sparkles, Lock } from "lucide-react";
+import { WeeklyReflectionView } from "./components/WeeklyReflectionView";
+import { AlertCircle, ShieldAlert, Sparkles, Lock, Compass } from "lucide-react";
 
 // Zero-crash payload sanitizer: strips undefined values before database storage
 function sanitizePayload<T>(obj: T): T {
@@ -57,6 +60,13 @@ export function App() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null);
   const [vaultReady, setVaultReady] = useState(false);
+
+  // Weekly Reflection (Memory & Pattern Engine) state
+  const [viewWeekly, setViewWeekly] = useState(false);
+  const [currentWeeklySummary, setCurrentWeeklySummary] = useState<WeeklyReflectionData | null>(null);
+  const [savedWeeklySummaries, setSavedWeeklySummaries] = useState<WeeklyReflectionData[]>([]);
+  const [loadingWeekly, setLoadingWeekly] = useState(false);
+  const [savingWeekly, setSavingWeekly] = useState(false);
 
   // Initialize or load the user's AES-GCM 256-bit vault key from isolated path
   const initOrLoadUserVaultKey = async (uid: string): Promise<CryptoKey> => {
@@ -110,12 +120,16 @@ export function App() {
         setUser(profile);
         const key = await initOrLoadUserVaultKey(firebaseUser.uid);
         await loadUserInteractions(firebaseUser.uid, key);
+        await loadSavedWeeklySummaries(firebaseUser.uid, key);
       } else {
         setUser(null);
         setVaultKey(null);
         setVaultReady(false);
         setInteractions([]);
         setSelectedInteraction(null);
+        setCurrentWeeklySummary(null);
+        setSavedWeeklySummaries([]);
+        setViewWeekly(false);
       }
       setAuthChecking(false);
     });
@@ -209,6 +223,177 @@ export function App() {
     }
   };
 
+  // Load past encrypted weekly summaries from Firestore, decrypting with vault key (Directive 8 & 9)
+  const loadSavedWeeklySummaries = async (uid: string, activeKey?: CryptoKey | null) => {
+    const keyToUse = activeKey || vaultKey;
+    try {
+      const summariesRef = collection(db, "users", uid, "weekly_summaries");
+      const q = query(summariesRef, orderBy("createdAt", "desc"));
+      const snapshot = await getDocs(q);
+
+      const items: WeeklyReflectionData[] = [];
+      for (const docSnap of snapshot.docs) {
+        const data = docSnap.data() as EncryptedWeeklySummaryDoc;
+        if (data.isEncrypted && keyToUse) {
+          try {
+            const decSynthesis = await decryptText(data.summaryCiphertext, data.summaryIv, keyToUse);
+            const decThemes = data.themesCiphertext && data.themesIv
+              ? await decryptObject<string[]>(data.themesCiphertext, data.themesIv, keyToUse)
+              : [];
+            const decInsight = data.insightsCiphertext && data.insightsIv
+              ? await decryptText(data.insightsCiphertext, data.insightsIv, keyToUse)
+              : "";
+
+            items.push({
+              id: docSnap.id,
+              userId: data.userId,
+              startDate: data.startDate,
+              endDate: data.endDate,
+              entryCount: data.entryCount,
+              recurringThemes: decThemes,
+              toneShift: data.toneShift || "Consistent Focus",
+              synthesis: decSynthesis,
+              actionableInsight: decInsight,
+              moodDistribution: data.moodDistribution || {},
+              modelUsed: data.modelUsed || "gemini-3.6-flash",
+              createdAt: data.createdAt,
+              isEncrypted: true,
+              summaryIv: data.summaryIv,
+            });
+          } catch (decErr) {
+            console.warn("Could not decrypt weekly summary record:", docSnap.id);
+          }
+        }
+      }
+      setSavedWeeklySummaries(items);
+    } catch (err: any) {
+      console.warn("Could not load weekly summaries:", err?.message || err);
+    }
+  };
+
+  // Generate Weekly Pattern Analysis with Gemini across the last 7 days of entries
+  const handleGenerateWeeklyReflection = async () => {
+    if (!user) return;
+    setLoadingWeekly(true);
+    setGlobalError(null);
+    try {
+      const activeKey = vaultKey || (await initOrLoadUserVaultKey(user.uid));
+      const keyJwk = await exportKeyToJwk(activeKey);
+
+      // Filter entries strictly within the 7-day window
+      const nowMs = Date.now();
+      const sevenDaysAgoMs = nowMs - 7 * 24 * 60 * 60 * 1000;
+      const recentEntries = interactions.filter((item) => {
+        const itemDate = new Date(item.createdAt).getTime();
+        return !isNaN(itemDate) && itemDate >= sevenDaysAgoMs && item.userId === user.uid;
+      });
+
+      if (recentEntries.length === 0) {
+        throw new Error("No reflections found in the last 7 days to synthesize.");
+      }
+
+      // Re-verify per-document ownership & enforce max batch cap of 10 (Directive 9)
+      const cappedEntries = recentEntries.slice(0, 10);
+
+      const res = await fetch("/api/weekly-reflect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.uid,
+          keyJwk,
+          entries: cappedEntries,
+          startDate: new Date(sevenDaysAgoMs).toISOString(),
+          endDate: new Date().toISOString(),
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Synthesis request failed.");
+      }
+
+      const data = await res.json();
+      const generatedSummary: WeeklyReflectionData = {
+        id: `weekly-${Date.now()}`,
+        userId: user.uid,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        entryCount: data.entryCount,
+        recurringThemes: data.recurringThemes,
+        toneShift: data.toneShift,
+        synthesis: data.synthesis,
+        actionableInsight: data.actionableInsight,
+        moodDistribution: data.moodDistribution,
+        modelUsed: data.modelUsed,
+        createdAt: data.createdAt,
+        isEncrypted: false,
+      };
+
+      setCurrentWeeklySummary(generatedSummary);
+      setViewWeekly(true);
+      setSelectedInteraction(null);
+    } catch (err: any) {
+      console.error("Weekly reflection generation failed:", err);
+      setGlobalError(err?.message || "Failed to generate weekly reflection patterns.");
+    } finally {
+      setLoadingWeekly(false);
+    }
+  };
+
+  // Encrypt Weekly Summary with client-side AES-GCM and store in Firestore (Directive 8 & 9)
+  const handleSaveWeeklySummary = async (data: WeeklyReflectionData) => {
+    if (!user) return;
+    setSavingWeekly(true);
+    setGlobalError(null);
+    try {
+      const activeKey = vaultKey || (await initOrLoadUserVaultKey(user.uid));
+
+      // Client-Side Encryption with AES-GCM
+      const encSynthesis = await encryptText(data.synthesis, activeKey);
+      const encThemes = await encryptObject(data.recurringThemes, activeKey);
+      const encInsight = await encryptText(data.actionableInsight || "", activeKey);
+
+      const summaryId = `summary_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const docData: EncryptedWeeklySummaryDoc = {
+        id: summaryId,
+        userId: user.uid,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        entryCount: data.entryCount,
+        summaryCiphertext: encSynthesis.ciphertext,
+        summaryIv: encSynthesis.iv,
+        themesCiphertext: encThemes.ciphertext,
+        themesIv: encThemes.iv,
+        insightsCiphertext: encInsight.ciphertext,
+        insightsIv: encInsight.iv,
+        toneShift: data.toneShift,
+        moodDistribution: data.moodDistribution || {},
+        modelUsed: data.modelUsed,
+        createdAt: new Date().toISOString(),
+        isEncrypted: true,
+      };
+
+      const docRef = doc(db, "users", user.uid, "weekly_summaries", summaryId);
+      await setDoc(docRef, sanitizePayload(docData));
+
+      const updatedRecord: WeeklyReflectionData = {
+        ...data,
+        id: summaryId,
+        isEncrypted: true,
+        summaryIv: encSynthesis.iv,
+      };
+
+      setCurrentWeeklySummary(updatedRecord);
+      setSavedWeeklySummaries((prev) => [updatedRecord, ...prev]);
+    } catch (err: any) {
+      console.error("Failed to save weekly summary:", err);
+      setGlobalError("Failed to save encrypted weekly summary to vault.");
+      throw err;
+    } finally {
+      setSavingWeekly(false);
+    }
+  };
+
   const handleSignIn = async () => {
     setGlobalError(null);
     try {
@@ -222,6 +407,7 @@ export function App() {
       setUser(profile);
       const key = await initOrLoadUserVaultKey(fbUser.uid);
       await loadUserInteractions(fbUser.uid, key);
+      await loadSavedWeeklySummaries(fbUser.uid, key);
     } catch (err: any) {
       console.error("Sign-in exception:", err);
       throw err;
@@ -231,18 +417,17 @@ export function App() {
   const handleSignOut = async () => {
     try {
       await signOutUser();
-      setUser(null);
-      setVaultKey(null);
-      setVaultReady(false);
-      setInteractions([]);
-      setSelectedInteraction(null);
     } catch (err) {
       console.error("Sign-out error:", err);
+    } finally {
       setUser(null);
       setVaultKey(null);
       setVaultReady(false);
       setInteractions([]);
       setSelectedInteraction(null);
+      setCurrentWeeklySummary(null);
+      setSavedWeeklySummaries([]);
+      setViewWeekly(false);
     }
   };
 
@@ -498,6 +683,14 @@ export function App() {
     }
   };
 
+  // Filter entries within the 7-day window for memory & pattern analysis
+  const nowMs = Date.now();
+  const sevenDaysAgoMs = nowMs - 7 * 24 * 60 * 60 * 1000;
+  const past7DaysEntries = interactions.filter((item) => {
+    const itemDate = new Date(item.createdAt).getTime();
+    return !isNaN(itemDate) && itemDate >= sevenDaysAgoMs;
+  });
+
   // Auth checking splash
   if (authChecking) {
     return (
@@ -528,10 +721,17 @@ export function App() {
         onSignOut={handleSignOut}
         onNewReflection={() => {
           setSelectedInteraction(null);
+          setViewWeekly(false);
           setHistoryOpen(false);
         }}
         onToggleHistory={() => setHistoryOpen(!historyOpen)}
         historyCount={interactions.length}
+        onOpenWeeklyReflection={() => {
+          setSelectedInteraction(null);
+          setViewWeekly(true);
+          setHistoryOpen(false);
+        }}
+        isWeeklyActive={viewWeekly && !selectedInteraction}
       />
 
       {/* Global Error Banner */}
@@ -560,7 +760,10 @@ export function App() {
           <HistorySidebar
             interactions={interactions}
             selectedId={selectedInteraction?.id || null}
-            onSelect={(item) => setSelectedInteraction(item)}
+            onSelect={(item) => {
+              setSelectedInteraction(item);
+              setViewWeekly(false);
+            }}
             loading={false}
           />
         </aside>
@@ -578,6 +781,7 @@ export function App() {
                 selectedId={selectedInteraction?.id || null}
                 onSelect={(item) => {
                   setSelectedInteraction(item);
+                  setViewWeekly(false);
                   setHistoryOpen(false);
                 }}
                 onClose={() => setHistoryOpen(false)}
@@ -597,6 +801,18 @@ export function App() {
                 onDelete={handleDeleteInteraction}
                 onBack={() => setSelectedInteraction(null)}
                 loading={loadingAction}
+              />
+            ) : viewWeekly ? (
+              <WeeklyReflectionView
+                past7DaysEntries={past7DaysEntries}
+                onGenerateWeeklySummary={handleGenerateWeeklyReflection}
+                onSaveWeeklySummary={handleSaveWeeklySummary}
+                currentSummary={currentWeeklySummary}
+                savedSummaries={savedWeeklySummaries}
+                onSelectSavedSummary={(summary) => setCurrentWeeklySummary(summary)}
+                onBack={() => setViewWeekly(false)}
+                loading={loadingWeekly}
+                saving={savingWeekly}
               />
             ) : (
               <div className="space-y-8">

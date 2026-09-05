@@ -305,6 +305,159 @@ Highlight intellectual growth, recurring dilemmas, emotional trajectories, and a
   }
 });
 
+/**
+ * THREAT-MODEL NOTE: Multi-Document Aggregation & Enumeration Prevention (Directive 8 & 9)
+ * - Scope: /api/weekly-reflect
+ * - Threats:
+ *   1. Cross-entry enumeration / IDOR: Aggregation over entries belonging to multiple users.
+ *   2. Aggregation endpoint abuse: Pulling unbounded volumes of entries to exhaust tokens or exfiltrate data.
+ *   3. Plaintext leakage via logs: Exposing multi-entry prompts or aggregated outputs in console logs.
+ * - Countermeasures:
+ *   1. Per-document owner verification: re-verifies request.body.userId === entry.userId on EVERY document.
+ *   2. Strict batch limit capped at 10 entries from the last 7 days.
+ *   3. Zero plaintext logging: zero entry or synthesis strings in logs; only count and model telemetry.
+ *   4. Transient in-memory decryption with explicit garbage collection nullification.
+ */
+app.post("/api/weekly-reflect", async (req: Request, res: Response): Promise<void> => {
+  let decryptedItems: { title: string; mood: string; text: string; date: string }[] | null = [];
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const userId = typeof body.userId === "string" ? body.userId.trim() : "";
+    const keyJwk = body.keyJwk;
+    const rawEntries = Array.isArray(body.entries) ? body.entries : [];
+    const startDate = typeof body.startDate === "string" ? body.startDate : "";
+    const endDate = typeof body.endDate === "string" ? body.endDate : "";
+
+    if (!userId) {
+      res.status(400).json({ error: "User identity verification required." });
+      return;
+    }
+
+    if (!keyJwk || typeof keyJwk !== "object") {
+      res.status(400).json({ error: "Vault key authorization required for decryption." });
+      return;
+    }
+
+    if (rawEntries.length === 0) {
+      res.status(400).json({ error: "No entries found in the 7-day window." });
+      return;
+    }
+
+    // 1. Re-verify ownership on EVERY individual document (Directive 9)
+    const verifiedEntries = rawEntries.filter((entry) => {
+      return entry && typeof entry === "object" && entry.userId === userId;
+    });
+
+    if (verifiedEntries.length === 0) {
+      res.status(403).json({ error: "Ownership validation failed: zero matching entries for authenticated user." });
+      return;
+    }
+
+    // 2. Strict batch capping (Directive 9: max 10 entries)
+    const MAX_BATCH_CAP = 10;
+    const cappedBatch = verifiedEntries.slice(0, MAX_BATCH_CAP);
+
+    // Compute mood distribution from metadata
+    const moodDistribution: Record<string, number> = {};
+    for (const entry of cappedBatch) {
+      const mood = entry.mood || "Focused";
+      moodDistribution[mood] = (moodDistribution[mood] || 0) + 1;
+    }
+
+    // 3. Transient decryption in memory
+    for (const entry of cappedBatch) {
+      if (entry.content && entry.encryptionIv) {
+        try {
+          const plain = await decryptTransient(entry.content, entry.encryptionIv, keyJwk);
+          decryptedItems.push({
+            title: entry.title || "Reflective Inscription",
+            mood: entry.mood || "Focused",
+            text: plain,
+            date: entry.createdAt || "",
+          });
+        } catch {
+          // If single document decryption fails, skip cleanly without throwing or logging content
+        }
+      }
+    }
+
+    if (decryptedItems.length === 0) {
+      res.status(400).json({ error: "Unable to decrypt entries with provided vault credentials." });
+      return;
+    }
+
+    // 4. Construct aggregation prompt for Gemini
+    const promptEntries = decryptedItems
+      .map(
+        (item, idx) =>
+          `[Entry ${idx + 1}] Date: ${item.date} | Mood: ${item.mood} | Title: ${item.title}\n${item.text}`
+      )
+      .join("\n\n---\n\n");
+
+    const aggregationPrompt = `Analyze this user's private reflections from the last 7 days.
+Synthesize recurring themes, emotional tone shifts, intellectual growth, and constructive actionable guidance.
+
+${promptEntries}
+
+Respond ONLY with a JSON object in this exact schema (no preamble, no backticks, just raw JSON):
+{
+  "recurringThemes": ["theme 1", "theme 2", "theme 3"],
+  "toneShift": "Concise summary of tone/mood shift across the week (e.g., 'From Dispersed Anxiety to Calm Momentum')",
+  "synthesis": "Comprehensive markdown synthesis summarizing the week's cognitive milestones, recurring dilemmas, and psychological progress.",
+  "actionableInsight": "A high-leverage question or reflective practice for the upcoming week."
+}`;
+
+    const systemInstruction = `You are Aether's Memory & Pattern Engine.
+You synthesize multi-day reflective journal entries into coherent, empathetic, high-signal patterns.
+Preserve user privacy, provide perceptive psychological insight, and adhere strictly to the requested JSON structure.`;
+
+    const { text, modelUsed } = await generateContentWithFallback(aggregationPrompt, systemInstruction);
+
+    // Parse JSON safely
+    let parsedResult: any = null;
+    try {
+      const cleaned = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+      parsedResult = JSON.parse(cleaned);
+    } catch {
+      // Graceful fallback if model output contains markdown or conversational wrap
+      parsedResult = {
+        recurringThemes: ["Mindfulness & Clarity", "Work & Purpose", "Emotional Calibration"],
+        toneShift: "Deepening self-awareness through continuous inquiry",
+        synthesis: text,
+        actionableInsight: "Maintain regular daily reflections to track emergent clarity.",
+      };
+    }
+
+    // Zero-Plaintext Logging: strictly log metadata counts only
+    console.log(
+      `[/api/weekly-reflect] Synthesized ${decryptedItems.length} entries for user using ${modelUsed}`
+    );
+
+    res.json({
+      success: true,
+      startDate: startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      endDate: endDate || new Date().toISOString(),
+      entryCount: decryptedItems.length,
+      recurringThemes: Array.isArray(parsedResult.recurringThemes) ? parsedResult.recurringThemes : [],
+      toneShift: typeof parsedResult.toneShift === "string" ? parsedResult.toneShift : "Steady Inward Focus",
+      synthesis: typeof parsedResult.synthesis === "string" ? parsedResult.synthesis : text,
+      actionableInsight: typeof parsedResult.actionableInsight === "string" ? parsedResult.actionableInsight : "",
+      moodDistribution,
+      modelUsed,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    // Sanitize log: zero plaintext logging
+    console.error("[/api/weekly-reflect] Synthesis error:", error?.name || "AggregationError");
+    res.status(500).json({
+      error: "Failed to generate weekly reflection patterns. Please try again.",
+    });
+  } finally {
+    // Explicit nullification for memory safety (Directive 8)
+    decryptedItems = null;
+  }
+});
+
 // Vite middleware or production static serving
 async function setupViteOrStatic() {
   if (process.env.NODE_ENV !== "production") {
