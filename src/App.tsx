@@ -42,7 +42,8 @@ import { ReflectionComposer } from "./components/ReflectionComposer";
 import { ActiveInteractionView } from "./components/ActiveInteractionView";
 import { HistorySidebar } from "./components/HistorySidebar";
 import { WeeklyReflectionView } from "./components/WeeklyReflectionView";
-import { AlertCircle, ShieldAlert, Sparkles, Lock, Compass } from "lucide-react";
+import { AlertCircle, ShieldAlert, Sparkles, Lock, Compass, CheckCircle2 } from "lucide-react";
+import { ensureFreshSession } from "./lib/sessionFreshness";
 
 // Zero-crash payload sanitizer: strips undefined values before database storage
 function sanitizePayload<T>(obj: T): T {
@@ -50,9 +51,15 @@ function sanitizePayload<T>(obj: T): T {
 }
 
 export function App() {
+  // Test hook for Section 11 Error Boundary validation
+  if (typeof window !== "undefined" && window.location.search.includes("trigger_error=true")) {
+    throw new Error("Test intentional render error: verified top-level React Error Boundary");
+  }
+
   const [user, setUser] = useState<UserProfile | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [interactions, setInteractions] = useState<JournalInteraction[]>([]);
+  const [loadingInteractions, setLoadingInteractions] = useState<boolean>(false);
   const [selectedInteraction, setSelectedInteraction] = useState<JournalInteraction | null>(null);
   const [loadingAction, setLoadingAction] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>("");
@@ -67,6 +74,7 @@ export function App() {
   const [savedWeeklySummaries, setSavedWeeklySummaries] = useState<WeeklyReflectionData[]>([]);
   const [loadingWeekly, setLoadingWeekly] = useState(false);
   const [savingWeekly, setSavingWeekly] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
 
   // Initialize or load the user's AES-GCM 256-bit vault key from isolated path
   const initOrLoadUserVaultKey = async (uid: string): Promise<CryptoKey> => {
@@ -141,6 +149,7 @@ export function App() {
   const loadUserInteractions = async (uid: string, activeKey?: CryptoKey | null) => {
     const keyToUse = activeKey || vaultKey;
     const path = `users/${uid}/interactions`;
+    setLoadingInteractions(true);
     try {
       const interactionsRef = collection(db, "users", uid, "interactions");
       const q = query(interactionsRef, orderBy("createdAt", "desc"));
@@ -220,6 +229,8 @@ export function App() {
           // Logged contextually
         }
       }
+    } finally {
+      setLoadingInteractions(false);
     }
   };
 
@@ -683,6 +694,70 @@ export function App() {
     }
   };
 
+  // Export decrypted journal data (Directive 14 & Directive 15)
+  // Gated by Firebase Auth getIdTokenResult session freshness check (>60 min prompts Google Sign-In)
+  const handleExportData = async () => {
+    if (!user || interactions.length === 0) return;
+
+    setExportingData(true);
+    setStatusMessage("Verifying session authentication freshness...");
+
+    try {
+      // Check session freshness (Directive 14): if session > 60m, prompt re-auth
+      const isFresh = await ensureFreshSession(60, () => {
+        setStatusMessage("Session requires re-authentication for vault export. Opening Google authentication...");
+      });
+
+      if (!isFresh) {
+        setGlobalError("Export cancelled: Re-authentication is required to access decrypted data export.");
+        return;
+      }
+
+      setStatusMessage("Exporting decrypted archive records...");
+
+      // Directive 15: Client-side only export, timestamped, decrypted locally, never sent to server
+      const exportPayload = {
+        exportedAt: new Date().toISOString(),
+        user: {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+        },
+        recordsCount: interactions.length,
+        encryptionStandard: "AES-GCM-256-CLIENT-SIDE",
+        interactions: interactions.map((item) => ({
+          id: item.id,
+          title: item.title,
+          mode: item.mode,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          initialUserPrompt: item.initialUserPrompt,
+          initialAssistantResponse: item.initialAssistantResponse,
+          thread: item.thread || [],
+        })),
+      };
+
+      const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
+        type: "application/json;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const dateStr = new Date().toISOString().split("T")[0];
+      link.href = url;
+      link.download = `aether-vault-export-${dateStr}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error("Failed to export vault data:", err);
+      setGlobalError("Failed to export vault data. Please try again.");
+    } finally {
+      setExportingData(false);
+      setStatusMessage("");
+    }
+  };
+
   // Filter entries within the 7-day window for memory & pattern analysis
   const nowMs = Date.now();
   const sevenDaysAgoMs = nowMs - 7 * 24 * 60 * 60 * 1000;
@@ -764,7 +839,9 @@ export function App() {
               setSelectedInteraction(item);
               setViewWeekly(false);
             }}
-            loading={false}
+            loading={loadingInteractions}
+            onExport={handleExportData}
+            isExporting={exportingData}
           />
         </aside>
 
@@ -785,7 +862,9 @@ export function App() {
                   setHistoryOpen(false);
                 }}
                 onClose={() => setHistoryOpen(false)}
-                loading={false}
+                loading={loadingInteractions}
+                onExport={handleExportData}
+                isExporting={exportingData}
               />
             </div>
           </div>

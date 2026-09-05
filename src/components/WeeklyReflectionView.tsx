@@ -143,8 +143,41 @@ export const WeeklyReflectionView: React.FC<WeeklyReflectionViewProps> = ({
         )}
       </div>
 
-      {/* Current Generated or Selected Summary */}
-      {currentSummary && (
+        {/* Analysis Loading Skeleton (Directive 12) */}
+        {loading && (
+          <div className="rounded-sm border border-[#262626] bg-[#141414] p-6 sm:p-8 space-y-6 animate-pulse">
+            <div className="flex items-center justify-between border-b border-[#222222] pb-4">
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-4 bg-[#C5A059]/30 rounded-xs animate-spin" />
+                <div className="h-3 w-48 bg-[#262626] rounded-xs" />
+              </div>
+              <div className="h-3 w-28 bg-[#222222] rounded-xs" />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="h-28 bg-[#1a1a1a] rounded-sm p-4 space-y-3">
+                <div className="h-3 w-32 bg-[#2a2a2a] rounded-xs" />
+                <div className="flex gap-2">
+                  <div className="h-6 w-20 bg-[#242424] rounded-xs" />
+                  <div className="h-6 w-24 bg-[#242424] rounded-xs" />
+                </div>
+              </div>
+              <div className="h-28 bg-[#1a1a1a] rounded-sm p-4 space-y-3">
+                <div className="h-3 w-36 bg-[#2a2a2a] rounded-xs" />
+                <div className="h-4 w-3/4 bg-[#242424] rounded-xs" />
+              </div>
+            </div>
+
+            <div className="space-y-2.5 pt-2">
+              <div className="h-3.5 w-full bg-[#1e1e1e] rounded-xs" />
+              <div className="h-3.5 w-5/6 bg-[#1e1e1e] rounded-xs" />
+              <div className="h-3.5 w-4/6 bg-[#1c1c1c] rounded-xs" />
+            </div>
+          </div>
+        )}
+
+        {/* Current Generated or Selected Summary */}
+        {!loading && currentSummary && (
         <div className="space-y-6">
           {/* Key Metrics / Pattern Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -250,8 +283,33 @@ export const WeeklyReflectionView: React.FC<WeeklyReflectionViewProps> = ({
         </div>
       )}
 
+        {/* Unanalyzed Empty State (Directive 12: When entries exist but user hasn't run synthesis yet) */}
+        {!loading && !currentSummary && past7DaysEntries.length > 0 && (
+          <div className="rounded-sm border border-[#222222] bg-[#111111] p-8 text-center space-y-3">
+            <div className="mx-auto w-12 h-12 rounded-full bg-[#161616] border border-[#2e2e2e] flex items-center justify-center text-[#C5A059]">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div className="max-w-md mx-auto space-y-1">
+              <h3 className="text-sm font-serif font-medium text-[#E5E5E5]">
+                Ready for Weekly Pattern Synthesis
+              </h3>
+              <p className="text-xs font-serif italic text-[#888888] leading-relaxed">
+                You have {past7DaysEntries.length} encrypted reflection{past7DaysEntries.length === 1 ? "" : "s"} from the last 7 days.
+                Click "Generate Weekly Analysis" above to synthesize cognitive trajectories, emotional shifts, and recurring themes.
+              </p>
+            </div>
+            <button
+              onClick={onGenerateWeeklySummary}
+              className="inline-flex items-center gap-2 rounded-sm bg-[#C5A059] px-4 py-2 text-xs font-mono uppercase tracking-wider text-black font-semibold hover:bg-[#D4AF37] transition-all cursor-pointer"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Begin Synthesis</span>
+            </button>
+          </div>
+        )}
+
       {/* Past Saved Weekly Summaries Archive */}
-      {savedSummaries.length > 0 && (
+      {savedSummaries.length > 0 ? (
         <div className="rounded-sm border border-[#262626] bg-[#111111] p-6 space-y-4">
           <div className="flex items-center justify-between border-b border-[#222222] pb-3">
             <h3 className="text-xs font-mono uppercase tracking-widest text-[#E5E5E5] flex items-center gap-2">
@@ -304,6 +362,16 @@ export const WeeklyReflectionView: React.FC<WeeklyReflectionViewProps> = ({
               </div>
             ))}
           </div>
+        </div>
+      ) : (
+        <div className="rounded-sm border border-[#222222] bg-[#0E0E0E] p-6 text-center space-y-2">
+          <div className="flex items-center justify-center gap-2 text-xs font-mono uppercase tracking-widest text-[#666666]">
+            <Archive className="h-3.5 w-3.5 text-[#555555]" />
+            <span>Vault Archive: Prior Weekly Syntheses (0)</span>
+          </div>
+          <p className="text-[11px] font-serif italic text-[#777777]">
+            No historical weekly analyses saved to your vault yet. When you generate and click "Save to Encrypted Vault", your synthesis records will be cataloged here.
+          </p>
         </div>
       )}
     </div>

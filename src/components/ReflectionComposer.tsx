@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ReflectionMode } from "../types";
-import { Sparkles, Send, Lightbulb, FileText, Brain, RefreshCw, AlertTriangle } from "lucide-react";
+import { Sparkles, Send, Lightbulb, FileText, Brain, RefreshCw, AlertTriangle, ShieldAlert } from "lucide-react";
+import { detectPii } from "../lib/piiDetector";
 
 interface ReflectionComposerProps {
   onSubmit: (title: string, prompt: string, mode: ReflectionMode, mood?: string) => Promise<void>;
@@ -34,12 +35,18 @@ export const ReflectionComposer: React.FC<ReflectionComposerProps> = ({
   const [mode, setMode] = useState<ReflectionMode>("reflect");
   const [selectedMood, setSelectedMood] = useState<string>("Focused");
   const [localError, setLocalError] = useState<string | null>(null);
+  // Section 13 Pre-Send Redaction & PII check state
+  const [piiWarningDismissed, setPiiWarningDismissed] = useState(false);
+  const [showPiiBanner, setShowPiiBanner] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!prompt.trim() || loading) return;
+  // Check input for PII (phone number or email)
+  const fullTextToScan = `${title} ${prompt}`;
+  const piiResult = detectPii(fullTextToScan);
 
+  const executeSend = async () => {
     setLocalError(null);
+    setShowPiiBanner(false);
+    setPiiWarningDismissed(false);
     try {
       await onSubmit(title.trim(), prompt.trim(), mode, selectedMood);
       setTitle("");
@@ -48,6 +55,19 @@ export const ReflectionComposer: React.FC<ReflectionComposerProps> = ({
       console.error("Composer submission error:", err);
       setLocalError(err?.message || "Failed to complete and save reflection. Your draft is preserved below.");
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!prompt.trim() || loading) return;
+
+    // Section 13 Directive: If PII detected and user hasn't explicitly clicked "Send anyway", show non-blocking inline warning
+    if (piiResult.hasPii && !piiWarningDismissed) {
+      setShowPiiBanner(true);
+      return;
+    }
+
+    await executeSend();
   };
 
   const handleApplySuggestion = (suggestion: string) => {
@@ -183,6 +203,59 @@ export const ReflectionComposer: React.FC<ReflectionComposerProps> = ({
             className="w-full rounded-sm border border-[#262626] bg-[#141414] p-4 text-base font-serif italic text-[#D1D1D1] placeholder:text-[#444444] placeholder:italic focus:border-[#C5A059] focus:outline-none transition-all leading-relaxed resize-y"
           />
         </div>
+
+        {/* Section 13 Pre-Send PII Advisory Warning Banner */}
+        {showPiiBanner && piiResult.hasPii && (
+          <div
+            id="composer-pii-warning-banner"
+            className="rounded-sm border border-amber-500/40 bg-amber-950/20 p-4 space-y-3"
+          >
+            <div className="flex items-start gap-2.5">
+              <ShieldAlert className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+              <div className="space-y-1 text-left flex-1">
+                <p className="text-xs font-serif font-medium text-amber-200">
+                  Potential Personal Information Detected
+                </p>
+                <p className="text-[11px] font-serif text-[#C4C4C4] leading-relaxed">
+                  Your entry appears to contain sensitive contact identifiers (
+                  <span className="font-mono text-amber-300 font-medium">
+                    {piiResult.types.join(", ")}
+                  </span>
+                  : {piiResult.matches.map((m) => `"${m}"`).join(", ")}). While your text is encrypted with your private AES-GCM vault key before being stored in Firestore, this content will be sent to the Gemini API for synthesis.
+                </p>
+                <p className="text-[10px] font-mono text-[#888888] italic">
+                  Advisory notice only — you maintain full sovereignty over what you share.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-1 border-t border-amber-500/20">
+              <button
+                type="button"
+                id="btn-pii-edit-first"
+                onClick={() => {
+                  setShowPiiBanner(false);
+                  const el = document.getElementById("reflection-body-input");
+                  if (el) el.focus();
+                }}
+                className="px-3 py-1.5 rounded-xs border border-[#333333] bg-[#1a1a1a] text-xs font-mono uppercase tracking-wider text-[#D4D4D4] hover:bg-[#252525] hover:text-white transition-colors cursor-pointer"
+              >
+                Edit First
+              </button>
+              <button
+                type="button"
+                id="btn-pii-send-anyway"
+                onClick={() => {
+                  setPiiWarningDismissed(true);
+                  executeSend();
+                }}
+                className="px-3.5 py-1.5 rounded-xs border border-amber-500/60 bg-amber-500/20 text-xs font-mono uppercase tracking-wider text-amber-300 hover:bg-amber-500/30 transition-colors font-medium cursor-pointer"
+              >
+                Send Anyway
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Guided Starters */}
         <div className="space-y-2">
