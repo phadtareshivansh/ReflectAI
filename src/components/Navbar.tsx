@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { UserProfile } from "../types";
-import { LogOut, PlusCircle, BookOpen } from "lucide-react";
+import { LogOut, PlusCircle, BookOpen, Lock, X } from "lucide-react";
 
 interface NavbarProps {
   user: UserProfile;
@@ -17,6 +17,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleHistory,
   historyCount,
 }) => {
+  const [vaultModalOpen, setVaultModalOpen] = useState(false);
+
   return (
     <header className="sticky top-0 z-30 border-b border-[#262626] bg-[#0D0D0D]/95 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -30,13 +32,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               <h1 className="text-sm sm:text-base tracking-[0.25em] uppercase font-light text-[#E5E5E5]">
                 Aether <span className="font-bold text-[#C5A059]">Reflect</span>
               </h1>
-              <span className="hidden sm:inline-flex items-center gap-1.5 text-[9px] uppercase tracking-widest text-[#448844] font-mono border border-[#448844]/30 px-2 py-0.5 rounded-sm bg-[#448844]/10">
-                <span className="w-1.5 h-1.5 bg-[#448844] rounded-full animate-pulse"></span>
-                Firestore Protected
-              </span>
+              <button
+                id="vault-status-indicator"
+                onClick={() => setVaultModalOpen(true)}
+                className="hidden sm:inline-flex items-center gap-1.5 text-[9px] uppercase tracking-widest text-[#C5A059] font-mono border border-[#C5A059]/40 px-2 py-0.5 rounded-sm bg-[#C5A059]/10 hover:bg-[#C5A059]/20 transition-all cursor-pointer"
+                title="View Encrypted Vault Specifications"
+              >
+                <Lock className="w-2.5 h-2.5 text-[#C5A059]" />
+                <span>Vault: AES-GCM-256</span>
+              </button>
             </div>
             <p className="text-[10px] uppercase tracking-wider text-[#555555] hidden sm:block">
-              Private AI reflections powered by Gemini 3.6 Flash
+              Encrypted Reflections with Gemini 3.6 Flash
             </p>
           </div>
         </div>
@@ -102,6 +109,66 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Vault Cryptographic Inspection Modal */}
+      {vaultModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-sm border border-[#262626] bg-[#111111] p-6 shadow-2xl text-[#E5E5E5] space-y-4">
+            <div className="flex items-center justify-between border-b border-[#222222] pb-3">
+              <div className="flex items-center gap-2.5">
+                <Lock className="w-4 h-4 text-[#C5A059]" />
+                <h3 className="text-xs font-bold tracking-[0.2em] uppercase text-[#E5E5E5]">
+                  Encrypted Insight Vault Specification
+                </h3>
+              </div>
+              <button
+                onClick={() => setVaultModalOpen(false)}
+                className="text-[#666666] hover:text-[#E5E5E5] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-[#AAAAAA] leading-relaxed">
+              <div className="p-3 bg-[#161616] border border-[#262626] rounded-sm space-y-2 font-mono text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#666666]">Cipher Suite:</span>
+                  <span className="text-[#C5A059] font-bold">AES-GCM (256-bit)</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#666666]">Nonce / IV:</span>
+                  <span className="text-[#E5E5E5]">96-bit CSPRNG per write</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#666666]">Key Isolation:</span>
+                  <span className="text-emerald-400">/users/{user.uid}/keys/vault</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#666666]">Ciphertext Path:</span>
+                  <span className="text-[#E5E5E5]">/users/{user.uid}/interactions/*</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#666666]">Server Logging:</span>
+                  <span className="text-emerald-400">Zero Plaintext Logging</span>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-[#777777]">
+                Journal entries (inquiries, reflections, and follow-up dialectic threads) are encrypted directly in your browser before transmission to Firestore. Only Base64 ciphertext resides in the database.
+              </p>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setVaultModalOpen(false)}
+                className="border border-[#333333] bg-[#181818] px-4 py-1.5 text-[10px] tracking-[0.15em] uppercase text-[#CCCCCC] hover:text-white hover:border-[#555555] rounded-sm transition-all cursor-pointer"
+              >
+                Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { UserProfile, JournalInteraction, ReflectionMode, ChatMessage } from "./types";
+import {
+  UserProfile,
+  JournalInteraction,
+  ReflectionMode,
+  ChatMessage,
+  UserVaultKeyRecord,
+  EncryptedInteractionDoc,
+} from "./types";
 import {
   auth,
   db,
@@ -9,6 +16,7 @@ import {
   collection,
   doc,
   setDoc,
+  getDoc,
   getDocs,
   deleteDoc,
   query,
@@ -17,12 +25,21 @@ import {
   handleFirestoreError,
   OperationType,
 } from "./firebase";
+import {
+  generateVaultKey,
+  exportKeyToJwk,
+  importKeyFromJwk,
+  encryptText,
+  decryptText,
+  encryptObject,
+  decryptObject,
+} from "./lib/crypto";
 import { Navbar } from "./components/Navbar";
 import { LandingPage } from "./components/LandingPage";
 import { ReflectionComposer } from "./components/ReflectionComposer";
 import { ActiveInteractionView } from "./components/ActiveInteractionView";
 import { HistorySidebar } from "./components/HistorySidebar";
-import { AlertCircle, ShieldAlert, Sparkles } from "lucide-react";
+import { AlertCircle, ShieldAlert, Sparkles, Lock } from "lucide-react";
 
 // Zero-crash payload sanitizer: strips undefined values before database storage
 function sanitizePayload<T>(obj: T): T {
@@ -38,6 +55,43 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null);
+  const [vaultReady, setVaultReady] = useState(false);
+
+  // Initialize or load the user's AES-GCM 256-bit vault key from isolated path
+  const initOrLoadUserVaultKey = async (uid: string): Promise<CryptoKey> => {
+    const keyDocRef = doc(db, "users", uid, "keys", "vault");
+    try {
+      const keySnap = await getDoc(keyDocRef);
+      if (keySnap.exists()) {
+        const data = keySnap.data() as UserVaultKeyRecord;
+        const imported = await importKeyFromJwk(data.keyJwk);
+        setVaultKey(imported);
+        setVaultReady(true);
+        return imported;
+      } else {
+        const freshKey = await generateVaultKey();
+        const jwkStr = await exportKeyToJwk(freshKey);
+        const keyRecord: UserVaultKeyRecord = {
+          keyJwk: jwkStr,
+          algorithm: "AES-GCM-256",
+          createdAt: new Date().toISOString(),
+          userId: uid,
+        };
+        await setDoc(keyDocRef, sanitizePayload(keyRecord));
+        setVaultKey(freshKey);
+        setVaultReady(true);
+        return freshKey;
+      }
+    } catch (err: any) {
+      console.warn("Vault key initialization notice:", err?.message || err);
+      // Fallback generate in memory if network delay or initial write pending
+      const fallbackKey = await generateVaultKey();
+      setVaultKey(fallbackKey);
+      setVaultReady(true);
+      return fallbackKey;
+    }
+  };
 
   // Initialize Auth state listener and test database connectivity
   useEffect(() => {
@@ -54,9 +108,12 @@ export function App() {
           photoURL: firebaseUser.photoURL,
         };
         setUser(profile);
-        await loadUserInteractions(firebaseUser.uid);
+        const key = await initOrLoadUserVaultKey(firebaseUser.uid);
+        await loadUserInteractions(firebaseUser.uid, key);
       } else {
         setUser(null);
+        setVaultKey(null);
+        setVaultReady(false);
         setInteractions([]);
         setSelectedInteraction(null);
       }
@@ -66,8 +123,9 @@ export function App() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch private isolated entries from Firestore
-  const loadUserInteractions = async (uid: string) => {
+  // Fetch private isolated entries from Firestore, decrypting ciphertext client-side
+  const loadUserInteractions = async (uid: string, activeKey?: CryptoKey | null) => {
+    const keyToUse = activeKey || vaultKey;
     const path = `users/${uid}/interactions`;
     try {
       const interactionsRef = collection(db, "users", uid, "interactions");
@@ -75,9 +133,68 @@ export function App() {
       const snapshot = await getDocs(q);
 
       const items: JournalInteraction[] = [];
-      snapshot.forEach((docSnap) => {
-        items.push({ id: docSnap.id, ...docSnap.data() } as JournalInteraction);
-      });
+      for (const docSnap of snapshot.docs) {
+        const data = docSnap.data();
+        if (data.isEncrypted && keyToUse) {
+          try {
+            const decryptedContent = await decryptText(data.content, data.encryptionIv, keyToUse);
+            const decryptedResponse = await decryptText(
+              data.geminiResponse,
+              data.responseIv || data.encryptionIv,
+              keyToUse
+            );
+            let decryptedMessages: ChatMessage[] = [];
+            if (data.messagesCiphertext && data.messagesIv) {
+              try {
+                decryptedMessages = await decryptObject<ChatMessage[]>(
+                  data.messagesCiphertext,
+                  data.messagesIv,
+                  keyToUse
+                );
+              } catch {
+                decryptedMessages = [];
+              }
+            } else if (Array.isArray(data.messages)) {
+              decryptedMessages = data.messages;
+            }
+
+            items.push({
+              id: docSnap.id,
+              userId: data.userId || uid,
+              title: data.title || "Reflective Inscription",
+              content: decryptedContent,
+              mode: data.mode || "reflect",
+              mood: data.mood,
+              geminiResponse: decryptedResponse,
+              modelUsed: data.modelUsed || "gemini-3.6-flash",
+              createdAt: data.createdAt,
+              updatedAt: data.updatedAt,
+              messages: decryptedMessages,
+              isEncrypted: true,
+              encryptionIv: data.encryptionIv,
+            });
+          } catch (decryptErr) {
+            console.warn("Could not decrypt entry:", docSnap.id);
+            items.push({
+              id: docSnap.id,
+              userId: data.userId || uid,
+              title: data.title || "Encrypted Entry",
+              content: "[Encrypted Vault Content - Decryption Key Mismatch]",
+              mode: data.mode || "reflect",
+              mood: data.mood,
+              geminiResponse: "[Encrypted Gemini Synthesis]",
+              modelUsed: data.modelUsed || "gemini-3.6-flash",
+              createdAt: data.createdAt,
+              updatedAt: data.updatedAt,
+              isEncrypted: true,
+              encryptionIv: data.encryptionIv,
+            });
+          }
+        } else {
+          // Plaintext / legacy entry
+          items.push({ id: docSnap.id, ...data } as JournalInteraction);
+        }
+      }
 
       setInteractions(items);
     } catch (err: any) {
@@ -103,7 +220,8 @@ export function App() {
         photoURL: fbUser.photoURL,
       };
       setUser(profile);
-      await loadUserInteractions(fbUser.uid);
+      const key = await initOrLoadUserVaultKey(fbUser.uid);
+      await loadUserInteractions(fbUser.uid, key);
     } catch (err: any) {
       console.error("Sign-in exception:", err);
       throw err;
@@ -114,10 +232,17 @@ export function App() {
     try {
       await signOutUser();
       setUser(null);
+      setVaultKey(null);
+      setVaultReady(false);
       setInteractions([]);
       setSelectedInteraction(null);
     } catch (err) {
       console.error("Sign-out error:", err);
+      setUser(null);
+      setVaultKey(null);
+      setVaultReady(false);
+      setInteractions([]);
+      setSelectedInteraction(null);
     }
   };
 
@@ -158,28 +283,41 @@ export function App() {
       const geminiSynthesis = data.response;
       const modelUsed = data.modelUsed || "gemini-3.6-flash";
 
-      setStatusMessage("Securing reflection in private Firestore archive...");
+      setStatusMessage("Encrypting with AES-GCM and securing in vault...");
 
-      // 2. Guaranteed Transaction Persistence
+      // 2. Guaranteed Transaction Persistence with Client-Side AES-GCM Encryption
       const newInteractionId = doc(collection(db, "users", user.uid, "interactions")).id;
       const now = new Date().toISOString();
 
-      const interactionRecord: JournalInteraction = {
+      let effectiveKey = vaultKey;
+      if (!effectiveKey) {
+        effectiveKey = await initOrLoadUserVaultKey(user.uid);
+      }
+
+      // Encrypt prompt and synthesis using client-side WebCrypto AES-GCM
+      const encContent = await encryptText(prompt, effectiveKey);
+      const encResponse = await encryptText(geminiSynthesis, effectiveKey);
+
+      const firestoreDoc: EncryptedInteractionDoc = {
         id: newInteractionId,
         userId: user.uid,
         title: title || (prompt.length > 50 ? `${prompt.slice(0, 47)}...` : prompt),
-        content: prompt,
+        content: encContent.ciphertext, // STORED AS CIPHERTEXT IN FIRESTORE
+        encryptionIv: encContent.iv,
+        geminiResponse: encResponse.ciphertext, // STORED AS CIPHERTEXT IN FIRESTORE
+        responseIv: encResponse.iv,
         mode,
         mood: mood || "Focused",
-        geminiResponse: geminiSynthesis,
         modelUsed,
         createdAt: now,
         updatedAt: now,
-        messages: [],
+        messagesCiphertext: "",
+        messagesIv: "",
+        isEncrypted: true,
       };
 
       // Strict undefined stripping
-      const sanitizedRecord = sanitizePayload(interactionRecord);
+      const sanitizedRecord = sanitizePayload(firestoreDoc);
 
       const docPath = `users/${user.uid}/interactions/${newInteractionId}`;
       try {
@@ -196,7 +334,23 @@ export function App() {
         }
       }
 
-      // 3. Update local state
+      // 3. Update local state with plaintext for immediate rendering
+      const interactionRecord: JournalInteraction = {
+        id: newInteractionId,
+        userId: user.uid,
+        title: firestoreDoc.title,
+        content: prompt,
+        mode,
+        mood: mood || "Focused",
+        geminiResponse: geminiSynthesis,
+        modelUsed,
+        createdAt: now,
+        updatedAt: now,
+        messages: [],
+        isEncrypted: true,
+        encryptionIv: encContent.iv,
+      };
+
       setInteractions((prev) => [interactionRecord, ...prev]);
       setSelectedInteraction(interactionRecord);
     } catch (err: any) {
@@ -268,11 +422,27 @@ export function App() {
         updatedAt: now,
       };
 
-      // Persist to Firestore
+      let effectiveKey = vaultKey;
+      if (!effectiveKey) {
+        effectiveKey = await initOrLoadUserVaultKey(user.uid);
+      }
+
+      // Encrypt the chat history client-side before sending to Firestore
+      const encMessages = await encryptObject(updatedMessages, effectiveKey);
+
+      // Persist to Firestore with encrypted messages
       const updatePath = `users/${user.uid}/interactions/${interactionId}`;
       try {
         const docRef = doc(db, "users", user.uid, "interactions", interactionId);
-        await setDoc(docRef, sanitizePayload(updatedInteraction), { merge: true });
+        await setDoc(
+          docRef,
+          sanitizePayload({
+            messagesCiphertext: encMessages.ciphertext,
+            messagesIv: encMessages.iv,
+            updatedAt: now,
+          }),
+          { merge: true }
+        );
       } catch (dbErr: any) {
         console.warn("Firestore update notice:", dbErr);
         if (dbErr?.code === "permission-denied" || dbErr?.message?.includes("Missing or insufficient permissions")) {

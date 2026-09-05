@@ -1,17 +1,41 @@
 {
   "entities": {
+    "userKey": {
+      "title": "UserVaultKey",
+      "description": "Client-side AES-GCM 256-bit encryption key securely escrowed in a separate document for the authenticated user",
+      "type": "object",
+      "properties": {
+        "keyJwk": {
+          "type": "string",
+          "description": "JWK serialized CryptoKey representation"
+        },
+        "algorithm": {
+          "type": "string",
+          "description": "Cryptographic algorithm (AES-GCM-256)"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of key generation"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner"
+        }
+      },
+      "required": ["keyJwk", "algorithm", "createdAt", "userId"]
+    },
     "interaction": {
       "title": "JournalInteraction",
-      "description": "User journal reflection and Gemini dialogue record",
+      "description": "User journal reflection and Gemini dialogue record with client-side AES-GCM encryption",
       "type": "object",
       "properties": {
         "title": {
           "type": "string",
-          "description": "The title of the reflection entry"
+          "description": "The title of the reflection entry (plaintext or ciphertext)"
         },
         "content": {
           "type": "string",
-          "description": "The original user inquiry or reflection notes"
+          "description": "User inquiry or reflection text. Stored as AES-GCM ciphertext when isEncrypted is true"
         },
         "mode": {
           "type": "string",
@@ -23,11 +47,19 @@
         },
         "geminiResponse": {
           "type": "string",
-          "description": "The primary philosophical or analytical synthesis from Gemini"
+          "description": "The synthesis from Gemini. Stored as AES-GCM ciphertext when isEncrypted is true"
         },
         "modelUsed": {
           "type": "string",
           "description": "The Gemini model that synthesized the response"
+        },
+        "isEncrypted": {
+          "type": "boolean",
+          "description": "Whether content and dialectic dialogue are encrypted with client-side AES-GCM"
+        },
+        "encryptionIv": {
+          "type": "string",
+          "description": "Base64 initialization vector for AES-GCM ciphertext"
         },
         "createdAt": {
           "type": "string",
@@ -49,6 +81,10 @@
     "/users/{userId}/interactions/{interactionId}": {
       "schema": "interaction",
       "description": "Private owner-isolated reflections and dialectic history"
+    },
+    "/users/{userId}/keys/{keyId}": {
+      "schema": "userKey",
+      "description": "Private owner-isolated vault encryption keys separated from interaction documents"
     }
   }
 }

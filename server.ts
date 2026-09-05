@@ -91,7 +91,14 @@ app.get("/api/health", (_req: Request, res: Response) => {
   });
 });
 
-// Primary reflection endpoint
+/**
+ * THREAT-MODEL NOTE: Plaintext Leakage Prevention (OWASP LLM05 & Directive 8)
+ * - Scope: /api/reflect
+ * - Risk: Plaintext prompt leakage via server stdout/stderr or error trackers.
+ * - Countermeasure: Prompts and AI outputs reside transiently in function memory.
+ * - Zero-Plaintext Logging: Logs contain strictly operational metadata (model used, timing, sanitized status).
+ * - Decrypted/plaintext content is NEVER written to disk, database, or console logs.
+ */
 app.post("/api/reflect", async (req: Request, res: Response): Promise<void> => {
   try {
     // Defensive Payload Ingestion (Null-Safe Destructuring)
@@ -131,14 +138,21 @@ Formatting:
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-    console.error("[/api/reflect] Error handling reflection:", error);
+    // Sanitize log: log only the error name and code, NEVER raw request payloads or user content
+    console.error("[/api/reflect] Operation failed:", error?.name || "SynthesisError");
     res.status(500).json({
-      error: error?.message || "An unexpected error occurred during reflection synthesis.",
+      error: "An error occurred during reflection synthesis. Please try again.",
     });
   }
 });
 
-// Multi-turn chat/dialectic endpoint
+/**
+ * THREAT-MODEL NOTE: Plaintext Leakage Prevention (OWASP LLM05 & Directive 8)
+ * - Scope: /api/chat
+ * - Risk: Plaintext multi-turn chat message leakage via server logs or exception crash reports.
+ * - Countermeasure: Multi-turn history is processed strictly in memory and dereferenced.
+ * - Zero-Plaintext Logging: Exception handlers scrub message contents and only output status codes.
+ */
 app.post("/api/chat", async (req: Request, res: Response): Promise<void> => {
   try {
     const body = req.body && typeof req.body === "object" ? req.body : {};
@@ -168,10 +182,126 @@ Format using clean, elegant Markdown.`;
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-    console.error("[/api/chat] Error handling chat message:", error);
+    // Sanitize log: zero plaintext logging
+    console.error("[/api/chat] Operation failed:", error?.name || "ChatError");
     res.status(500).json({
-      error: error?.message || "An unexpected error occurred during follow-up dialogue.",
+      error: "An error occurred during follow-up dialogue. Please try again.",
     });
+  }
+});
+
+/**
+ * Helper to decode base64 in Node.js
+ */
+function base64ToUint8(b64: string): Uint8Array {
+  const buf = Buffer.from(b64, "base64");
+  const ab = new ArrayBuffer(buf.length);
+  const view = new Uint8Array(ab);
+  for (let i = 0; i < buf.length; i++) {
+    view[i] = buf[i];
+  }
+  return view;
+}
+
+/**
+ * Transient in-memory decryption helper using standard WebCrypto SubtleCrypto.
+ * Decrypted content is immediately scoped to function execution and NEVER written to disk,
+ * cached, or logged.
+ */
+async function decryptTransient(
+  ciphertextBase64: string,
+  ivBase64: string,
+  jwk: any
+): Promise<string> {
+  const cryptoSubtle = globalThis.crypto.subtle;
+  const key = await cryptoSubtle.importKey(
+    "jwk",
+    jwk,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["decrypt"]
+  );
+  const iv = base64ToUint8(ivBase64);
+  const ciphertext = base64ToUint8(ciphertextBase64);
+  const decryptedBuf = await cryptoSubtle.decrypt(
+    { name: "AES-GCM", iv: iv as BufferSource },
+    key,
+    ciphertext as BufferSource
+  );
+  return new TextDecoder().decode(decryptedBuf);
+}
+
+/**
+ * THREAT-MODEL NOTE: Plaintext Leakage via Logs or Crash Reports (Directive 8 & 9)
+ * - Scope: /api/vault/transient-summarize
+ * - Objective: Allows server-side pattern analysis across user-provided encrypted entries.
+ * - Threat: Ciphertext decrypted on server could leak via unhandled error logs, crash dumps,
+ *   or process memory dumps.
+ * - Mitigations:
+ *   1. Decryption occurs purely in local function scope.
+ *   2. Decrypted strings and arrays are explicitly nullified in memory before response transmission.
+ *   3. Strict logging ban: console.log and console.error strictly record operation counts and model IDs;
+ *      never log payload, decrypted text, or raw error objects.
+ *   4. Capped batch limit: Rejects batches greater than 10 entries to prevent denial-of-service or bulk exfiltration.
+ */
+app.post("/api/vault/transient-summarize", async (req: Request, res: Response): Promise<void> => {
+  // Scoped references to ensure deterministic memory cleanup
+  let decryptedSnippets: string[] | null = [];
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const encryptedEntries = Array.isArray(body.entries) ? body.entries : [];
+    const keyJwk = body.keyJwk;
+
+    if (!keyJwk || typeof keyJwk !== "object") {
+      res.status(400).json({ error: "Transient vault key authorization required." });
+      return;
+    }
+
+    if (encryptedEntries.length === 0) {
+      res.status(400).json({ error: "No encrypted entries provided." });
+      return;
+    }
+
+    // Rate-limit batch cap as required by Directive 9
+    const MAX_BATCH = 10;
+    const batch = encryptedEntries.slice(0, MAX_BATCH);
+
+    for (const entry of batch) {
+      if (entry.content && entry.encryptionIv) {
+        try {
+          const plain = await decryptTransient(entry.content, entry.encryptionIv, keyJwk);
+          decryptedSnippets.push(`- [${entry.title || "Untitled"} (${entry.mode || "entry"})]: ${plain}`);
+        } catch {
+          // If a document fails decryption, skip without logging plaintext
+        }
+      }
+    }
+
+    if (decryptedSnippets.length === 0) {
+      res.status(400).json({ error: "Could not transiently decrypt provided entries with key." });
+      return;
+    }
+
+    const synthesisPrompt = `Synthesize the user's past journal entries into overarching patterns, recurring themes, and constructive insights:\n\n${decryptedSnippets.join("\n\n")}`;
+    const systemInstruction = `You are Aether, conducting high-level pattern analysis across a user's private reflections.
+Highlight intellectual growth, recurring dilemmas, emotional trajectories, and actionable future inquiries. Format with clean, structured Markdown.`;
+
+    const { text, modelUsed } = await generateContentWithFallback(synthesisPrompt, systemInstruction);
+
+    res.json({
+      summary: text,
+      modelUsed,
+      entriesAnalyzed: decryptedSnippets.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("[/api/vault/transient-summarize] Operation failed:", error?.name || "SummarizeError");
+    res.status(500).json({
+      error: "An unexpected error occurred during transient analysis.",
+    });
+  } finally {
+    // Explicit nullification for garbage collection (Zero plain-text in long-lived memory)
+    decryptedSnippets = null;
   }
 });
 

@@ -140,16 +140,23 @@ export const ActiveInteractionView: React.FC<ActiveInteractionViewProps> = ({
             <span className="border border-[#262626] bg-[#161616] px-2 py-0.5 text-[#C5A059] rounded-sm">
               Mode: {interaction.mode}
             </span>
-            <span className="inline-flex items-center gap-1 text-[#448844]">
+            <span className="inline-flex items-center gap-1 text-[#C5A059] font-mono">
               <ShieldCheck className="h-3.5 w-3.5" />
-              Owner Bound
+              AES-GCM-256
             </span>
           </div>
         </div>
 
-        <h1 className="mt-6 text-xl sm:text-2xl font-serif text-[#E5E5E5] leading-snug">
-          {interaction.title || "Reflective Inscription"}
-        </h1>
+        <div className="flex items-center justify-between gap-4 mt-6">
+          <h1 className="text-xl sm:text-2xl font-serif text-[#E5E5E5] leading-snug">
+            {interaction.title || "Reflective Inscription"}
+          </h1>
+          {interaction.encryptionIv && (
+            <span className="hidden md:inline-flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-[#777777] border border-[#222222] bg-[#161616] px-2 py-1 rounded-sm">
+              <span>IV: {interaction.encryptionIv.slice(0, 8)}...</span>
+            </span>
+          )}
+        </div>
 
         {/* User's Original Prompt / Entry */}
         <div className="mt-6 rounded-sm border border-[#262626] bg-[#141414] p-5">
