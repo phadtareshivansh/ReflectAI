@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "interaction": {
+      "title": "JournalInteraction",
+      "description": "User journal reflection and Gemini dialogue record",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title of the reflection entry"
+        },
+        "content": {
+          "type": "string",
+          "description": "The original user inquiry or reflection notes"
+        },
+        "mode": {
+          "type": "string",
+          "description": "Reflection mode: reflect, summarize, or brainstorm"
+        },
+        "mood": {
+          "type": "string",
+          "description": "User disposition or emotional state"
+        },
+        "geminiResponse": {
+          "type": "string",
+          "description": "The primary philosophical or analytical synthesis from Gemini"
+        },
+        "modelUsed": {
+          "type": "string",
+          "description": "The Gemini model that synthesized the response"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of creation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner"
+        }
+      },
+      "required": ["content", "geminiResponse", "userId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/interactions/{interactionId}": {
+      "schema": "interaction",
+      "description": "Private owner-isolated reflections and dialectic history"
+    }
+  }
+}
