@@ -3,7 +3,7 @@
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:6366F1,100:8B5CF6&height=220&section=header&text=ReflectAI&fontSize=70&fontColor=ffffff&animation=fadeIn&fontAlignY=35&desc=Your%20Private%2C%20Encrypted%20Space%20to%20Think%20Out%20Loud&descAlignY=55&descSize=18" width="100%"/>
 
 <a href="#">
-  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&duration=3000&pause=800&color=8B5CF6&center=true&vCenter=true&width=650&lines=Journal.+Reflect.+Brainstorm.+With+Gemini.;Authenticated+%E2%80%A2+Isolated+%E2%80%A2+Zero+Hardcoded+Secrets;Built+on+Google+AI+Studio+%2B+Cloud+Run" alt="Typing SVG" />
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&duration=3000&pause=800&color=8B5CF6&center=true&vCenter=true&width=650&lines=Journal.+Reflect.+Brainstorm.+With+Gemini.;Encrypted+%E2%80%A2+Isolated+%E2%80%A2+Zero+Hardcoded+Secrets;Built+on+Google+AI+Studio+%2B+Cloud+Run" alt="Typing SVG" />
 </a>
 
 <br/>
@@ -11,6 +11,7 @@
 [![Made with Gemini](https://img.shields.io/badge/Made%20with-Gemini%203.6%20Flash-8B5CF6?style=for-the-badge&logo=googlegemini&logoColor=white)](https://ai.google.dev/)
 [![Firebase](https://img.shields.io/badge/Auth-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
 [![Cloud Run](https://img.shields.io/badge/Deployed%20on-Cloud%20Run-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)](https://cloud.google.com/run)
+[![Encrypted](https://img.shields.io/badge/Entries-AES--GCM%20Encrypted-22C55E?style=for-the-badge&logo=letsencrypt&logoColor=white)](#-security-model)
 [![License](https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge)](#-license)
 
 <img src="https://img.shields.io/github/stars/phadtareshivansh/ReflectAI?style=social" />
@@ -27,7 +28,7 @@
 
 <br/>
 
-> **ReflectAI** is a full-stack, authenticated journaling companion powered by **Google Gemini** and **Cloud Firestore** — built as a submission for the **Google AI Studio Ideathon (APAC Academy)**. Every line of code was written under a security-first "constitution": threat-modeled, access-controlled, and secret-free by construction.
+> **ReflectAI** is a full-stack, authenticated journaling companion powered by **Google Gemini** and **Cloud Firestore** — built as a submission for the **Google AI Studio Ideathon (APAC GenAI Academy)**. Every line of code was written under a security-first "constitution": threat-modeled, access-controlled, secret-free, and now fully **end-to-end encrypted** by construction.
 
 <br/>
 
@@ -40,17 +41,17 @@
 - [✨ What is ReflectAI](#-what-is-reflectai)
 - [🎬 Live Demo](#-live-demo)
 - [🧠 Core Features](#-core-features)
+- [🚀 Beyond the Base Spec](#-beyond-the-base-spec)
 - [🏗️ Architecture](#️-architecture)
-- [🔐 Security Model](#-security-model)
 
 </td>
 <td width="50%" valign="top">
 
+- [🔐 Security Model](#-security-model)
 - [🛠️ Tech Stack](#️-tech-stack)
 - [🚀 Getting Started](#-getting-started)
 - [☁️ Deploying to Cloud Run](#️-deploying-to-cloud-run)
 - [🗂️ Project Structure](#️-project-structure)
-- [🗺️ Roadmap](#️-roadmap)
 
 </td>
 </tr>
@@ -60,9 +61,9 @@
 
 ## ✨ What is ReflectAI
 
-ReflectAI gives every user a **private, sandboxed** space to journal, brainstorm, and reflect in a live multi-turn conversation with Gemini. No two users ever share data — every document, every prompt, every AI response lives strictly under that user's own authenticated path in Firestore.
+ReflectAI gives every user a **private, encrypted, sandboxed** space to journal, brainstorm, and reflect in a live multi-turn conversation with Gemini. No two users ever share data — every document, every prompt, every AI response lives strictly under that user's own authenticated path in Firestore, and every entry is encrypted client-side before it's ever written.
 
-It was built to prove a point: an AI-scaffolded app doesn't have to trade production-readiness for speed. Google AI Studio's Custom Instructions were configured *first*, as a standing "constitution," before a single feature was written — so threat modeling, access control, and secret hygiene were baked into generation, not patched on afterward.
+It was built to prove a point: an AI-scaffolded app doesn't have to trade production-readiness for speed. Google AI Studio's Custom Instructions were configured *first*, as a standing "constitution," before a single feature was written — so threat modeling, access control, secret hygiene, and encryption-by-default were baked into generation, not patched on afterward.
 
 <br/>
 
@@ -70,14 +71,7 @@ It was built to prove a point: an AI-scaffolded app doesn't have to trade produc
 
 <div align="center">
 
-<!--
-  ⤷ Replace the line below with a real GIF/screen recording of ReflectAI in action.
-    A quick screen-capture (Kap / ScreenToGif / Peek) dropped into an `assets/` folder
-    and referenced here does more for judges than any amount of text.
--->
-
-
-**[🔗 Try the live app](https://ai.studio/apps/b4936274-7484-4af7-ae96-f5b1c5ce2969)** &nbsp;•&nbsp; 
+**[🔗 Try the live app](https://ai.studio/apps/b4936274-7484-4af7-ae96-f5b1c5ce2969)**
 
 </div>
 
@@ -110,7 +104,7 @@ Every entry is written to `/users/{userId}/interactions/{id}` in Firestore, enfo
 <td width="33%" valign="top">
 
 ### 🔒 Zero Hardcoded Secrets
-`GEMINI_API_KEY` is never committed or shipped client-side — it's injected at runtime via AI Studio's secret pipeline / Google Cloud Secret Manager.
+`GEMINI_API_KEY` is never committed or shipped client-side — it's retrieved from **Google Cloud Secret Manager** and injected at runtime into the Cloud Run service.
 
 </td>
 <td width="33%" valign="top">
@@ -130,31 +124,100 @@ Every feature was generated against a standing security "constitution" in AI Stu
 
 <br/>
 
+## 🚀 Beyond the Base Spec
+
+The starter lab gets you a working AI journal. ReflectAI goes further, treating a journal's contents the way they deserve to be treated — as genuinely private.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🔐 Encrypted Insight Vault
+Every entry is encrypted **client-side with AES-GCM** (WebCrypto) before it ever touches Firestore. Even a full database breach exposes only ciphertext. Gemini decrypts content transiently, in memory, only for the duration of a request — never logged, never cached, never written to disk.
+
+</td>
+<td width="50%" valign="top">
+
+### 🧠 Memory & Pattern Engine
+Weekly, Gemini-generated summaries surface recurring themes and mood shifts across your own entries. Keyword search works across your encrypted history, decrypting client-side. Every aggregation re-verifies per-entry ownership — a feature that "knows you" was built to never accidentally leak someone else's data.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🛡️ Pre-Send PII Guard
+A lightweight, non-blocking check flags likely emails or phone numbers in a draft before it's sent to Gemini, giving the user a clear "send anyway or edit first" choice rather than silently stripping or blocking content.
+
+</td>
+<td width="50%" valign="top">
+
+### ⏱️ Session Freshness Checks
+Sensitive actions (like exporting your data) require a fresh, re-verified auth token rather than trusting an arbitrarily old session — shrinking the window a hijacked session could be misused in.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 📤 Encrypted Data Export
+A "Download my data" option decrypts entries **client-side only** into a local file. Decrypted content never passes through the server during export — reusing the same vetted decrypt path as the rest of the app.
+
+</td>
+<td width="50%" valign="top">
+
+### 🚦 Per-User Rate Limiting
+The Gemini proxy endpoint is rate-limited per authenticated `uid`, generous enough to never interrupt normal use, but enough to blunt abuse or runaway cost from a compromised session.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🧯 Global Error Boundary
+A single component failure can no longer take down the entire app. Errors are caught, logged safely (no journal content), and shown as a friendly recoverable screen instead of a blank crash.
+
+</td>
+<td width="50%" valign="top">
+
+### ✨ Loading & Empty States
+Every async interaction — auth checks, entry loads, Gemini responses, search — has a real loading and empty state, never a blank or broken-looking screen.
+
+</td>
+</tr>
+</table>
+
+<br/>
+
 ## 🏗️ Architecture
 
 ```mermaid
 flowchart LR
     U([👤 User]) -->|Google Sign-In| FA[Firebase Auth]
     FA -->|Signed JWT| C[React 19 + Vite Client]
-    C -->|Authenticated request| S[Express Server<br/>server.ts]
-    S -->|Fetch secret at runtime| SM[(Secret Manager /<br/>AI Studio Secrets)]
-    S -->|generateContent w/ fallback ladder| G[Gemini API<br/>@google/genai]
+    C -->|Encrypt client-side AES-GCM| ENC{WebCrypto}
+    ENC -->|Ciphertext| S[Express Server<br/>server.ts]
+    S -->|Fetch secret at runtime| SM[(Secret Manager)]
+    S -->|Decrypt transiently, in memory| G[Gemini API<br/>@google/genai]
     G -->|AI response| S
-    S -->|Write scoped to uid| F[(Cloud Firestore<br/>/users/uid/interactions)]
+    S -->|Write ciphertext, scoped to uid| F[(Cloud Firestore<br/>/users/uid/interactions)]
     F -->|Read own docs only| C
+    C -->|Decrypt client-side| U
 
     style FA fill:#FFCA28,color:#000
     style G fill:#8B5CF6,color:#fff
     style F fill:#4285F4,color:#fff
     style SM fill:#22C55E,color:#000
+    style ENC fill:#EF4444,color:#fff
 ```
 
 | Layer | Component | Security Control |
 |---|---|---|
 | **Authentication** | Firebase Authentication (Google Sign-In) | Federated identity only — no passwords stored |
-| **Data Storage** | Cloud Firestore | Isolated path: `/users/{userId}/interactions/{interactionId}` |
-| **AI Processing** | Express proxy + `@google/genai` | API key never reaches the client; model fallback ladder |
-| **Secret Management** | Secret Manager / AI Studio Secrets panel | Injected as env vars at container runtime, never hardcoded |
+| **Encryption** | WebCrypto AES-GCM (client-side) | Entries encrypted before write; decrypted only client-side or transiently server-side |
+| **Data Storage** | Cloud Firestore | Isolated path: `/users/{userId}/interactions/{interactionId}`, ciphertext at rest |
+| **AI Processing** | Express proxy + `@google/genai` | API key never reaches the client; model fallback ladder; per-user rate limiting |
+| **Secret Management** | Google Cloud Secret Manager | Injected as env vars at Cloud Run runtime via IAM binding, never hardcoded |
 
 <br/>
 
@@ -182,6 +245,25 @@ firebase deploy --only firestore:rules
 </details>
 
 <details>
+<summary><b>Click to expand — Client-Side Encryption (Encrypted Insight Vault)</b></summary>
+
+- All entry text (prompt + Gemini response pairs) is encrypted client-side with **AES-GCM, 256-bit**, via the browser's native `SubtleCrypto` — before any Firestore write.
+- The per-user encryption key is stored **separately** from the ciphertext, never in the same document, so a leaked entry document alone reveals nothing readable.
+- When Gemini needs to read past entries (for the Pattern Engine's trend summaries), decryption happens **transiently, server-side, in memory only** — the plaintext is never logged, cached, or persisted to disk.
+- Verified manually: inspecting a raw Firestore document shows genuine ciphertext (confirmed not to be base64-encoded plaintext), and Cloud Run logs contain no trace of decrypted journal content after normal use.
+
+</details>
+
+<details>
+<summary><b>Click to expand — Aggregation & Pattern Engine Safety</b></summary>
+
+- Any endpoint reading multiple entries for trend summaries or search re-verifies `request.auth.uid` ownership **per entry**, not just once at the top of the request.
+- Aggregation calls are capped at a fixed number of entries per request, limiting the blast radius if a session were ever compromised.
+- Generated trend summaries are treated as sensitive data and follow the same encryption-at-rest rule as individual entries.
+
+</details>
+
+<details>
 <summary><b>Click to expand — Gemini Model Resilience (Fallback Ladder)</b></summary>
 
 Every AI call is wrapped so a single model outage never breaks the app:
@@ -198,8 +280,8 @@ gemini-3.6-flash → gemini-3.1-flash-lite → gemini-flash-latest → gemini-3.
 <summary><b>Click to expand — What "Zero Hardcoded Secrets" actually means here</b></summary>
 
 - No API key, service account, or credential is ever committed to this repo.
-- `GEMINI_API_KEY` and `APP_URL` are injected at runtime — see [`.env.example`](./.env.example) for the exact variables expected.
-- In production, keys are sourced from **Google Cloud Secret Manager**, bound to the Cloud Run service account via IAM — never baked into the container image.
+- `GEMINI_API_KEY` and `APP_URL` are injected at runtime — see [`.env.example`](./.env.example) for the exact variables expected in local development only.
+- In production, keys are sourced from **Google Cloud Secret Manager**, bound to the Cloud Run service account via IAM, and injected via `--set-secrets` at deploy time — never baked into the container image.
 
 </details>
 
@@ -217,12 +299,12 @@ gemini-3.6-flash → gemini-3.1-flash-lite → gemini-flash-latest → gemini-3.
 
 <div align="center">
 
-| Frontend | Backend | AI / Data | Tooling |
+| Frontend | Backend | AI / Data | Security / Tooling |
 |:---:|:---:|:---:|:---:|
-| React 19 | Express 4 | `@google/genai` 2.4 | Vite 6 |
-| Tailwind CSS 4 | `server.ts` (tsx) | Firebase 12 (Auth + Firestore) | TypeScript 5.8 |
-| Framer Motion | esbuild (prod bundle) | Cloud Secret Manager | ESLint / `tsc --noEmit` |
-| `react-markdown` + `lucide-react` | Cloud Run | Google AI Studio (scaffolded) | Bun / npm |
+| React 19 | Express 4 | `@google/genai` 2.4 | WebCrypto (AES-GCM) |
+| Tailwind CSS 4 | `server.ts` (tsx) | Firebase 12 (Auth + Firestore) | Cloud Secret Manager |
+| Framer Motion | esbuild (prod bundle) | Google AI Studio (scaffolded) | Per-user rate limiting |
+| `react-markdown` + `lucide-react` | Cloud Run | Vite 6 | TypeScript 5.8 / ESLint |
 
 </div>
 
@@ -241,7 +323,7 @@ npm install          # or: bun install
 # 3. Configure environment
 cp .env.example .env
 # then fill in:
-#   GEMINI_API_KEY   → your Gemini API key
+#   GEMINI_API_KEY   → your Gemini API key (local dev only)
 #   APP_URL          → http://localhost:3000 for local dev
 
 # 4. Run the dev server
@@ -305,7 +387,10 @@ gcloud run services update reflect-ai-journal \
 ReflectAI/
 ├── public/assets/aistudio/    # Static + AI Studio-generated assets
 ├── src/                       # React application source
-├── server.ts                  # Express server — Gemini proxy + auth middleware
+│   ├── crypto/                 # WebCrypto AES-GCM encrypt/decrypt helpers
+│   └── components/              # UI: chat, history, error boundary, redaction guard
+├── server.ts                  # Express server — Gemini proxy, auth middleware,
+│                               # rate limiting, transient decrypt for aggregation
 ├── firebase-applet-config.json
 ├── firestore.rules            # Owner-scoped Firestore security rules
 ├── index.html
@@ -317,21 +402,19 @@ ReflectAI/
 
 <br/>
 
-## 🗺️ Roadmap
+## 🗺️ Future Ideas
 
-- [ ] Client-side AES-GCM encryption of journal entries before Firestore writes
-- [ ] Weekly Gemini-generated mood/pattern trend summaries
-- [ ] Semantic search across past entries
-- [ ] PII redaction pass before prompts reach Gemini
-- [ ] Exportable, encrypted local backups
+- [ ] Full semantic/embedding-based search across entries (current search is keyword-based)
+- [ ] Optional passphrase-derived key for an extra layer beyond session-scoped encryption
+- [ ] Configurable retention/auto-delete policy for old entries
 
 <br/>
 
 <div align="center">
 
-### 🏆 Built for the Google AI Studio Ideathon — APAC Academy
+### 🏆 Built for the Google AI Studio Ideathon — APAC GenAI Academy
 
-*Configured with Custom Instructions before a single line of app code was written.*
+*Configured with Custom Instructions before a single line of app code was written — encryption, access control, and threat modeling by default, not by patch.*
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:8B5CF6,100:6366F1&height=120&section=footer" width="100%"/>
 
